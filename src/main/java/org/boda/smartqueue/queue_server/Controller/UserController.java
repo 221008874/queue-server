@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -196,6 +198,32 @@ public class UserController {
         public void setToken(String token) { this.token = token; }
         public String getNewPassword() { return newPassword; }
         public void setNewPassword(String newPassword) { this.newPassword = newPassword; }
+    }
+
+
+    // Add this rollback endpoint to your userDataController.java
+    @PostMapping("/rollback")
+    public ResponseEntity<?> rollbackRegistration(@RequestBody Map<String, String> request) {
+        try {
+            String email = request.get("email");
+
+            if (email == null || email.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email is required for rollback"));
+            }
+
+            // Find user by email and delete
+            Optional<userDataModel> userOpt = userService.getUserByEmail(email);
+
+            if (userOpt.isPresent()) {
+                userService.deleteUser(userOpt.get().getId());
+                return ResponseEntity.ok(Map.of("message", "User rollback successful for: " + email));
+            } else {
+                return ResponseEntity.ok(Map.of("message", "User not found, no rollback needed: " + email));
+            }
+        } catch (Exception e) {
+            Map<String, String> error = Map.of("error", "Rollback failed: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
 
 }
