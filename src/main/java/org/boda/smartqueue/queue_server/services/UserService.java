@@ -1,5 +1,5 @@
+// File: org/boda/smartqueue/queue_server/services/UserService.java
 package org.boda.smartqueue.queue_server.services;
-
 
 import org.boda.smartqueue.queue_server.model.userDataModel;
 import org.boda.smartqueue.queue_server.Repo.UserRepository;
@@ -36,7 +36,10 @@ public class UserService {
         }
 
         user.setPassword(passwordEncoder.encode(user.getPassword()));
-        user.setCustomerNumber(generateUniqueCustomerNumber());
+        // ✅ GENERATE STRING CUSTOMER NUMBER - Update generation logic if necessary
+        // For example, generate as a string like "L001", "B002", etc., or just a padded integer string
+        // For now, assuming it's just a unique integer converted to string
+        user.setCustomerNumber(generateUniqueCustomerNumberString()); // Call new method
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         user.setTicketStatus("INACTIVE");
@@ -44,10 +47,26 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    // ✅ NEW METHOD: Generate unique customer number as String
+    private String generateUniqueCustomerNumberString() {
+        String customerNumber;
+        do {
+            // Generate a random 6-digit number as a string
+            customerNumber = String.format("%06d", 100000 + random.nextInt(900000));
+        } while (userRepository.existsByCustomerNumber(customerNumber)); // Use String version of exists check
+
+        return customerNumber;
+    }
+
     public Optional<userDataModel> loginUser(String email, String password) {
         Optional<userDataModel> user = userRepository.findByEmail(email);
 
         if (user.isPresent() && passwordEncoder.matches(password, user.get().getPassword())) {
+            // ✅ VALIDATION: Ensure email is not null after login
+            if (user.get().getEmail() == null || user.get().getEmail().isEmpty()) {
+                System.err.println("❌ SECURITY ALERT: User object loaded from DB has null/empty email for ID: " + user.get().getId());
+                return Optional.empty(); // Reject login if email is missing
+            }
             return user;
         }
 
@@ -59,7 +78,17 @@ public class UserService {
     }
 
     public Optional<userDataModel> getUserByEmail(String email) {
-        return userRepository.findByEmail(email);
+        Optional<userDataModel> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isPresent()) {
+            userDataModel user = userOpt.get();
+            // ✅ VALIDATION: Ensure email is not null
+            if (user.getEmail() == null || user.getEmail().isEmpty()) {
+                System.err.println("❌ SECURITY ALERT: User object found in DB has null/empty email for requested email: " + email);
+                return Optional.empty(); // Return empty if validation fails
+            }
+            System.out.println("✅ UserService: Found user in DB. Email: '" + user.getEmail() + "', ticket: '" + user.getCustomerNumber() + "', status: '" + user.getTicketStatus() + "'");
+        }
+        return userOpt;
     }
 
     public List<userDataModel> getAllUsers() {
@@ -71,9 +100,24 @@ public class UserService {
         userDataModel user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Check email uniqueness (excluding current user)
+        if (updatedUser.getEmail() != null && !user.getEmail().equals(updatedUser.getEmail()) &&
+                userRepository.existsByEmail(updatedUser.getEmail())) {
+            throw new RuntimeException("Email already exists: " + updatedUser.getEmail());
+        }
+
+        // ✅ CHECK CUSTOMER NUMBER UNIQUENESS (excluding current user) - Now handles String
+        if (updatedUser.getCustomerNumber() != null &&
+                !updatedUser.getCustomerNumber().equals(user.getCustomerNumber()) &&
+                userRepository.existsByCustomerNumber(updatedUser.getCustomerNumber())) { // Use String version
+            throw new RuntimeException("Customer number already exists: " + updatedUser.getCustomerNumber());
+        }
+
         if (updatedUser.getName() != null) user.setName(updatedUser.getName());
+        if (updatedUser.getEmail() != null) user.setEmail(updatedUser.getEmail()); // Update email if provided
         if (updatedUser.getServiceType() != null) user.setServiceType(updatedUser.getServiceType());
         if (updatedUser.getPhoneNumber() != null) user.setPhoneNumber(updatedUser.getPhoneNumber());
+        if (updatedUser.getCustomerNumber() != null) user.setCustomerNumber(updatedUser.getCustomerNumber()); // Update customer number if provided
 
         user.setUpdatedAt(LocalDateTime.now());
 
@@ -132,14 +176,7 @@ public class UserService {
         userRepository.save(user);
     }
 
-    private Integer generateUniqueCustomerNumber() {
-        Integer customerNumber;
-        do {
-            customerNumber = 100000 + random.nextInt(900000);
-        } while (userRepository.findByCustomerNumber(customerNumber).isPresent());
-
-        return customerNumber;
-    }
+    // Removed the old generateUniqueCustomerNumber method as we now use String
 
     public List<userDataModel> getUsersByTicketStatus(String status) {
         return userRepository.findByTicketStatus(status);

@@ -1,3 +1,4 @@
+// File: org/boda/smartqueue/queue_server/model/userDataModel.java
 package org.boda.smartqueue.queue_server.model;
 
 import jakarta.persistence.*;
@@ -14,7 +15,6 @@ public class userDataModel {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-
     @Column(nullable = true)
     private LocalDateTime serviceCompletedAt;
 
@@ -26,7 +26,6 @@ public class userDataModel {
 
     @Column(nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
-
 
     @NotBlank(message = "Name is required")
     @Column(nullable = false)
@@ -49,30 +48,26 @@ public class userDataModel {
     @Column(unique = true, nullable = false)
     private String phoneNumber;
 
-    // ✅ customerNumber is NOT required at registration — assigned later
+    // ✅ CRITICAL CHANGE: Make customerNumber a String to match local server and client expectation
     @Column(unique = true, nullable = true) // Can be null initially
-    private Integer customerNumber;
-
+    private String customerNumber; // Changed from Integer to String
 
     private String resetPasswordToken; // Token for reset
-    private LocalDateTime resetPasswordExpiresAt;// Token expiry
-
-
+    private LocalDateTime resetPasswordExpiresAt; // Token expiry
 
     // Constructors
     public userDataModel() {}
 
-    // Constructor for registration (without customerNumber)
-    public userDataModel(String name, String email, String password, String serviceType, String phoneNumber,Integer customerNumber) {
+    public userDataModel(String name, String email, String password, String serviceType, String phoneNumber, String customerNumber) {
         this.name = name;
         this.email = email;
         this.password = password;
         this.serviceType = serviceType;
         this.phoneNumber = phoneNumber;
-        this.customerNumber = customerNumber;
+        this.customerNumber = customerNumber; // Now accepts String
     }
 
-    // Getters and Setters
+    // Getters and Setters (updated for String customerNumber)
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -91,24 +86,15 @@ public class userDataModel {
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
 
-    public Integer getCustomerNumber() { return customerNumber; }
-    public void setCustomerNumber(Integer customerNumber) { this.customerNumber = customerNumber; }
+    // ✅ CRITICAL CHANGE: Getter and setter for String customerNumber
+    public String getCustomerNumber() { return customerNumber; }
+    public void setCustomerNumber(String customerNumber) { this.customerNumber = customerNumber; }
 
-    public String getResetPasswordToken() {
-        return resetPasswordToken;
-    }
+    public String getResetPasswordToken() { return resetPasswordToken; }
+    public void setResetPasswordToken(String resetPasswordToken) { this.resetPasswordToken = resetPasswordToken; }
 
-    public void setResetPasswordToken(String resetPasswordToken) {
-        this.resetPasswordToken = resetPasswordToken;
-    }
-
-    public LocalDateTime getResetPasswordExpiresAt() {
-        return resetPasswordExpiresAt;
-    }
-
-    public void setResetPasswordExpiresAt(LocalDateTime resetPasswordExpiresAt) {
-        this.resetPasswordExpiresAt = resetPasswordExpiresAt;
-    }
+    public LocalDateTime getResetPasswordExpiresAt() { return resetPasswordExpiresAt; }
+    public void setResetPasswordExpiresAt(LocalDateTime resetPasswordExpiresAt) { this.resetPasswordExpiresAt = resetPasswordExpiresAt; }
 
     public LocalDateTime getServiceCompletedAt() { return serviceCompletedAt; }
     public void setServiceCompletedAt(LocalDateTime serviceCompletedAt) { this.serviceCompletedAt = serviceCompletedAt; }
@@ -120,7 +106,7 @@ public class userDataModel {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt;}
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
     @Override
     public String toString() {
@@ -130,15 +116,13 @@ public class userDataModel {
                 ", email='" + email + '\'' +
                 ", serviceType='" + serviceType + '\'' +
                 ", phoneNumber='" + phoneNumber + '\'' +
-                ", customerNumber=" + customerNumber +
+                ", customerNumber='" + customerNumber + '\'' + // Updated in toString
                 '}';
     }
 
-    // Add this field
     @Column(nullable = false)
     private String ticketStatus = "INACTIVE"; // INACTIVE, ACTIVE, CANCELLED
 
-    // Add getter/setter
     public String getTicketStatus() { return ticketStatus; }
     public void setTicketStatus(String ticketStatus) { this.ticketStatus = ticketStatus; }
 }
