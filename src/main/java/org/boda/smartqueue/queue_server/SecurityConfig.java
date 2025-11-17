@@ -1,5 +1,5 @@
+// File: org/boda/smartqueue/queue_server/SecurityConfig.java
 package org.boda.smartqueue.queue_server;
-
 
 import org.boda.smartqueue.queue_server.JWT.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +46,16 @@ public class SecurityConfig {
                                 "/api/users/reset-password",
                                 "/api/users/health"
                         ).permitAll()
-                        .anyRequest().authenticated()
+                        // **** ADD THESE LINES TO MAKE QUEUE ENDPOINTS PUBLIC ****
+                        .requestMatchers("/api/users/queues/state").permitAll() // Allow public GET for queue status
+                        // Be very careful about making the POST endpoint public.
+                        // For now, let's assume the local server needs to authenticate for updates.
+                        // If you want the local server to call it without a user JWT,
+                        // you might need a different auth mechanism (e.g., API key, mutual TLS).
+                        // For this example, we'll leave the POST endpoint potentially requiring auth
+                        // unless you explicitly add it here too (not recommended without further security).
+                        // .requestMatchers("/api/users/update-queue-state").permitAll() // Only if local server doesn't authenticate
+                        .anyRequest().authenticated() // Everything else requires auth
                 )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
