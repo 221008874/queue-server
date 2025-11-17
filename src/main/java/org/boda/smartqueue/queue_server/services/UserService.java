@@ -185,4 +185,6 @@ public class UserService {
     public List<userDataModel> getUsersByServiceType(String serviceType) {
         return userRepository.findByServiceType(serviceType);
     }
+
+
 }

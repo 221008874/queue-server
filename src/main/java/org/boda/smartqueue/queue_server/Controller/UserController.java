@@ -1,5 +1,6 @@
 package org.boda.smartqueue.queue_server.Controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.boda.smartqueue.queue_server.DTO.*;
 import org.boda.smartqueue.queue_server.Repo.ActiveQueueItemRepository;
 import org.boda.smartqueue.queue_server.Repo.QueueStateRepository;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
 
 @RestController
 @RequestMapping("/api/users")
@@ -510,6 +512,83 @@ public class UserController {
     }
 
 
+    @GetMapping("/queues/active")
+    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueues(
+            HttpServletRequest request) { // Add HttpServletRequest to access headers
+
+        // Extract the API key from the request header
+        String apiKey = request.getHeader("X-API-Key");
+        String key="221008874";
+        // Validate the API key against the expected local server key
+        if (!key.equals(apiKey)) { // Use the same constant defined in your SecurityConfig or a utility class
+            System.err.println("❌ AWS Server: Unauthorized access attempt to /queues/active. Provided API Key: " + apiKey);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Unauthorized", "Invalid API Key provided."));
+        }
+
+        System.out.println("🔍 AWS Server: Received request for all active queues with valid API key");
+
+        try {
+            // Fetch all active queue items, potentially group by service type in the response
+            List<ActiveQueueItem> allActiveItems = activeQueueItemRepository.findAll();
+
+            // Group by service type and sort within each group
+            Map<String, List<ActiveQueueItemDTO>> groupedItems = allActiveItems.stream()
+                    .map(ActiveQueueItemDTO::new)
+                    .sorted(Comparator.comparing(ActiveQueueItemDTO::getCustomerNumber)) // Sort by ticket number
+                    .collect(Collectors.groupingBy(ActiveQueueItemDTO::getServiceType));
+
+            // Convert the map values (lists) back to a single flat list or a structured response
+            List<ActiveQueueItemDTO> dtos = groupedItems.values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+
+            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items.");
+            return ResponseEntity.ok(ApiResponse.success("Active queues retrieved successfully", dtos));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error fetching active queues: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to retrieve active queues", e.getMessage()));
+        }
+    }
+
+    // NEW ENDPOINT: Get the list of active tickets for a specific service
+    // ALSO REQUIRE API KEY for this endpoint
+    @GetMapping("/queues/active/{serviceType}")
+    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueueForService(
+
+            @PathVariable String serviceType,
+            HttpServletRequest request) { // Add HttpServletRequest to access headers
+
+        // Extract and validate the API key
+        String key="221008874";
+        String apiKey = request.getHeader("X-API-Key");
+        if (!key.equals(apiKey)) {
+            System.err.println("❌ AWS Server: Unauthorized access attempt to /queues/active/$serviceType. Provided API Key: " + apiKey);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Unauthorized", "Invalid API Key provided."));
+        }
+
+        System.out.println("🔍 AWS Server: Received request for active queue for service: " + serviceType);
+
+        try {
+            List<ActiveQueueItem> activeItems = activeQueueItemRepository.findByServiceTypeOrderByCustomerNumberAsc(serviceType);
+            List<ActiveQueueItemDTO> dtos = activeItems.stream()
+                    .map(ActiveQueueItemDTO::new)
+                    .collect(Collectors.toList());
+
+            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items for service: " + serviceType);
+            return ResponseEntity.ok(ApiResponse.success("Active queue for service retrieved successfully", dtos));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error fetching active queue for service " + serviceType + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to retrieve active queue for service", e.getMessage()));
+        }
+    }
 
     public static class ActiveQueueItemDTO {
         private String userEmail;
