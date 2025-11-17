@@ -458,6 +458,59 @@ public class UserController {
         }
     }
 
+    @PostMapping("/ticket-status") // Previously might have been @PatchMapping
+    public ResponseEntity<ApiResponse<UserDTO>> updateTicketStatusFromLocalServer(
+            @RequestBody UpdateTicketInfoRequest request) { // Use the DTO defined below
+
+        System.out.println("🔧 AWS Server: Received ticket info update request from local server for email: " + request.getEmail());
+
+        try {
+            // Find the user on AWS by email
+            Optional<userDataModel> userOpt = userService.getUserByEmail(request.getEmail());
+
+            if (userOpt.isEmpty()) {
+                System.out.println("❌ AWS Server: User not found for email: " + request.getEmail());
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ApiResponse.error("User not found", "No user with email: " + request.getEmail()));
+            }
+
+            userDataModel user = userOpt.get();
+
+            // Update the user's ticket-related fields based on the request
+            // Validate the incoming data (e.g., check if status is allowed: ACTIVE, CANCELLED, COMPLETED)
+            if (request.getCustomerNumber() != null) {
+                user.setCustomerNumber(request.getCustomerNumber()); // This should be a String now if changed on AWS model
+            }
+            if (request.getServiceType() != null) {
+                user.setServiceType(request.getServiceType());
+            }
+            if (request.getTicketStatus() != null) {
+                // Optional: Add validation for allowed status transitions
+                // e.g., only allow ACTIVE->CANCELLED, not CANCELLED->ACTIVE directly from local server
+                user.setTicketStatus(request.getTicketStatus());
+            }
+            // Note: We probably don't want the local server to update name, email, password, etc.
+            // Consider adding validation here for allowed status transitions (e.g., ACTIVE -> CANCELLED)
+
+            user.setUpdatedAt(LocalDateTime.now()); // Update the timestamp
+
+            // Save the updated user back to the AWS database
+            userDataModel updatedUser = userService.updateUser(user.getId(), user); // Assuming your update method works with the full object
+            System.out.println("✅ AWS Server: Updated ticket info for user: " + updatedUser.getEmail());
+
+            // Return the updated user DTO
+            return ResponseEntity.ok(ApiResponse.success("Ticket info updated successfully", new UserDTO(updatedUser)));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error updating ticket info: " + e.getMessage());
+            e.printStackTrace(); // Log the full stack trace for debugging
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Update failed", e.getMessage()));
+        }
+    }
+
+
+
     public static class ActiveQueueItemDTO {
         private String userEmail;
         private String serviceType;
@@ -530,6 +583,21 @@ public class UserController {
         public String getNextTicketNumber() { return nextTicketNumber; }
         public void setNextTicketNumber(String nextTicketNumber) { this.nextTicketNumber = nextTicketNumber; }
     }
+    public static class UpdateTicketInfoRequest {
+        private String email;
+        private String customerNumber; // Should be String to match your changes
+        private String serviceType;
+        private String ticketStatus;
 
+        // Getters and Setters
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getCustomerNumber() { return customerNumber; }
+        public void setCustomerNumber(String customerNumber) { this.customerNumber = customerNumber; }
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+        public String getTicketStatus() { return ticketStatus; }
+        public void setTicketStatus(String ticketStatus) { this.ticketStatus = ticketStatus; }
+    }
 
 }
