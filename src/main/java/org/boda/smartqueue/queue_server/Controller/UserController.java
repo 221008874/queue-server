@@ -1,6 +1,8 @@
 package org.boda.smartqueue.queue_server.Controller;
 
 import org.boda.smartqueue.queue_server.DTO.*;
+import org.boda.smartqueue.queue_server.Repo.QueueStateRepository;
+import org.boda.smartqueue.queue_server.model.QueueState;
 import org.boda.smartqueue.queue_server.model.userDataModel;
 import org.boda.smartqueue.queue_server.services.UserService;
 import org.boda.smartqueue.queue_server.JWT.JwtUtil;
@@ -10,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,6 +29,84 @@ public class UserController {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    // ADD THIS AUTOWIRED FIELD
+    @Autowired
+    private QueueStateRepository queueStateRepository;
+
+    // ... existing methods ...
+
+    // NEW ENDPOINT: Get the current state of all queues (or specific service)
+    @GetMapping("/queues/state")
+    public ResponseEntity<ApiResponse<List<QueueStateDTO>>> getQueueState(
+            @RequestParam(required = false) String serviceType) { // Optional parameter to filter by service
+
+        System.out.println("🔍 AWS Server: Received request for queue state, serviceType filter: " + serviceType);
+
+        try {
+            List<QueueState> queueStates;
+
+            if (serviceType != null && !serviceType.trim().isEmpty()) {
+                // Fetch state for a specific service
+                Optional<QueueState> stateOpt = queueStateRepository.findByServiceType(serviceType);
+                if (stateOpt.isPresent()) {
+                    queueStates = List.of(stateOpt.get());
+                } else {
+                    queueStates = List.of(); // Return empty list if service not found
+                }
+            } else {
+                // Fetch state for all services
+                queueStates = queueStateRepository.findAll();
+            }
+
+            // Convert entities to DTOs for the response
+            List<QueueStateDTO> dtos = queueStates.stream()
+                    .map(QueueStateDTO::new)
+                    .collect(Collectors.toList());
+
+            System.out.println("✅ AWS Server: Returning queue state for " + dtos.size() + " services.");
+            return ResponseEntity.ok(ApiResponse.success("Queue state retrieved successfully", dtos));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error fetching queue state: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to retrieve queue state", e.getMessage()));
+        }
+    }
+
+    // ... existing methods ...
+
+    // ADD THIS INNER DTO CLASS for the response
+    public static class QueueStateDTO {
+        private String serviceType;
+        private String currentTicketNumber;
+        private String nextTicketNumber;
+        private LocalDateTime lastUpdatedAt;
+
+        // Constructor from entity
+        public QueueStateDTO(QueueState state) {
+            this.serviceType = state.getServiceType();
+            this.currentTicketNumber = state.getCurrentTicketNumber();
+            this.nextTicketNumber = state.getNextTicketNumber();
+            this.lastUpdatedAt = state.getLastUpdatedAt();
+        }
+
+        // Getters and Setters
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+        public String getCurrentTicketNumber() { return currentTicketNumber; }
+        public void setCurrentTicketNumber(String currentTicketNumber) { this.currentTicketNumber = currentTicketNumber; }
+        public String getNextTicketNumber() { return nextTicketNumber; }
+        public void setNextTicketNumber(String nextTicketNumber) { this.nextTicketNumber = nextTicketNumber; }
+        public LocalDateTime getLastUpdatedAt() { return lastUpdatedAt; }
+        public void setLastUpdatedAt(LocalDateTime lastUpdatedAt) { this.lastUpdatedAt = lastUpdatedAt; }
+    }
+
+
+//***************************************************************************
+
+
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<UserDTO>> registerUser(@Valid @RequestBody userDataModel user) {
@@ -225,5 +307,56 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
+
+
+
+    // NEW ENDPOINT: Allow local server to update the overall queue state on AWS
+    @PostMapping("/update-queue-state") // Or PATCH
+    public ResponseEntity<ApiResponse<QueueStateDTO>> updateQueueStateFromLocalServer(
+            @RequestBody UpdateQueueStateRequest request) {
+
+        System.out.println("🔧 AWS Server: Received queue state update from local server for service: " + request.getServiceType());
+
+        try {
+            // Find or create the queue state record for this service type
+            QueueState queueState = queueStateRepository.findById(request.getServiceType())
+                    .orElse(new QueueState(request.getServiceType()));
+
+            // Update the state based on the request
+            queueState.setCurrentTicketNumber(request.getCurrentTicketNumber());
+            queueState.setNextTicketNumber(request.getNextTicketNumber());
+
+            // Save the updated state
+            QueueState savedState = queueStateRepository.save(queueState);
+            System.out.println("✅ AWS Server: Updated queue state for service: " + savedState.getServiceType());
+
+            // Return the updated state DTO
+            return ResponseEntity.ok(ApiResponse.success("Queue state updated successfully", new QueueStateDTO(savedState)));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error updating queue state: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Update failed", e.getMessage()));
+        }
+    }
+
+    // ... existing methods ...
+
+    // ADD THIS INNER REQUEST DTO CLASS for the update endpoint
+    public static class UpdateQueueStateRequest {
+        private String serviceType;
+        private String currentTicketNumber;
+        private String nextTicketNumber;
+
+        // Getters and Setters
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+        public String getCurrentTicketNumber() { return currentTicketNumber; }
+        public void setCurrentTicketNumber(String currentTicketNumber) { this.currentTicketNumber = currentTicketNumber; }
+        public String getNextTicketNumber() { return nextTicketNumber; }
+        public void setNextTicketNumber(String nextTicketNumber) { this.nextTicketNumber = nextTicketNumber; }
+    }
+
 
 }
