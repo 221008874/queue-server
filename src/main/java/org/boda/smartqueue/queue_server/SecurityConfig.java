@@ -41,28 +41,28 @@ public class SecurityConfig {
 
     // FIRST FILTER CHAIN: For update endpoints that require API key authentication (POST, DELETE, etc.)
     @Bean
-    @Order(1) // Higher priority
+    @Order(1) // Highest priority for update paths requiring API key
     public SecurityFilterChain apiUpdateFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher( // Match only the *updating* paths that need the API key
-                        "/api/users/update-queue-state", // POST for queue state
-                        "/api/users/ticket-status",     // PATCH/POST for ticket status
-                        "/api/users/queues/active"      // POST/DELETE for active queue items (NOT GET)
-                        // Add other paths that require API key here if needed
+                // Match ONLY the paths and methods that require the API key from the local server
+                .securityMatcher(
+                        "/api/users/update-queue-state", // POST
+                        "/api/users/ticket-status",      // PUT/PATCH (for status updates)
+                        "/api/users/queues/active"       // POST (add), DELETE (remove) - Requires API Key
+                        // Add other update paths that require API key here if needed
                 )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(new ApiKeyAuthFilter(LOCAL_SERVER_API_KEY), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        .anyRequest().authenticated() // Requires valid API key for matched paths
+                        .anyRequest().authenticated() // Requires valid API key for matched paths and methods
                 );
         return http.build();
     }
-
     // SECOND FILTER CHAIN: Default chain for other requests (public GETs, JWT protected endpoints)
     @Bean
-    @Order(2) // Lower priority
+    @Order(2) // Lower priority than the update chain
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -87,10 +87,11 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class); // Make sure 'jwtAuthFilter' is the correct bean name
 
         return http.build();
     }
+
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
