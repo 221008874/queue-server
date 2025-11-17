@@ -316,92 +316,13 @@ public class UserController {
 
 
 
-    // NEW ENDPOINT: Allow local server to update the overall queue state on AWS
-    @PostMapping("/update-queue-state") // Or PATCH
-    public ResponseEntity<ApiResponse<QueueStateDTO>> updateQueueStateFromLocalServer(
-            @RequestBody UpdateQueueStateRequest request) {
 
-        System.out.println("🔧 AWS Server: Received queue state update from local server for service: " + request.getServiceType());
-
-        try {
-            // Find or create the queue state record for this service type
-            QueueState queueState = queueStateRepository.findById(request.getServiceType())
-                    .orElse(new QueueState(request.getServiceType()));
-
-            // Update the state based on the request
-            queueState.setCurrentTicketNumber(request.getCurrentTicketNumber());
-            queueState.setNextTicketNumber(request.getNextTicketNumber());
-
-            // Save the updated state
-            QueueState savedState = queueStateRepository.save(queueState);
-            System.out.println("✅ AWS Server: Updated queue state for service: " + savedState.getServiceType());
-
-            // Return the updated state DTO
-            return ResponseEntity.ok(ApiResponse.success("Queue state updated successfully", new QueueStateDTO(savedState)));
-
-        } catch (Exception e) {
-            System.err.println("❌ AWS Server: Error updating queue state: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Update failed", e.getMessage()));
-        }
-    }
 
 
 
 
     // NEW ENDPOINT: Get the list of active tickets for ALL services
-    @GetMapping("/queues/active")
-    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueues() {
-        System.out.println("🔍 AWS Server: Received request for all active queues");
 
-        try {
-            // Fetch all active queue items, potentially group by service type in the response
-            List<ActiveQueueItem> allActiveItems = activeQueueItemRepository.findAll();
-
-            // Group by service type and sort within each group
-            Map<String, List<ActiveQueueItemDTO>> groupedItems = allActiveItems.stream()
-                    .map(ActiveQueueItemDTO::new)
-                    .sorted(Comparator.comparing(ActiveQueueItemDTO::getCustomerNumber)) // Sort by ticket number
-                    .collect(Collectors.groupingBy(ActiveQueueItemDTO::getServiceType));
-
-            // Convert the map values (lists) back to a single flat list or a structured response
-            List<ActiveQueueItemDTO> dtos = groupedItems.values().stream()
-                    .flatMap(List::stream)
-                    .collect(Collectors.toList());
-
-            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items.");
-            return ResponseEntity.ok(ApiResponse.success("Active queues retrieved successfully", dtos));
-
-        } catch (Exception e) {
-            System.err.println("❌ AWS Server: Error fetching active queues: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to retrieve active queues", e.getMessage()));
-        }
-    }
-
-    // NEW ENDPOINT: Get the list of active tickets for a specific service
-    @GetMapping("/queues/active/{serviceType}")
-    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueueForService(@PathVariable String serviceType) {
-        System.out.println("🔍 AWS Server: Received request for active queue for service: " + serviceType);
-
-        try {
-            List<ActiveQueueItem> activeItems = activeQueueItemRepository.findByServiceTypeOrderByCustomerNumberAsc(serviceType);
-            List<ActiveQueueItemDTO> dtos = activeItems.stream()
-                    .map(ActiveQueueItemDTO::new)
-                    .collect(Collectors.toList());
-
-            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items for service: " + serviceType);
-            return ResponseEntity.ok(ApiResponse.success("Active queue for service retrieved successfully", dtos));
-
-        } catch (Exception e) {
-            System.err.println("❌ AWS Server: Error fetching active queue for service " + serviceType + ": " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to retrieve active queue for service", e.getMessage()));
-        }
-    }
 
     // NEW ENDPOINT: Allow local server to ADD an active ticket to AWS
     @PostMapping("/queues/active")
