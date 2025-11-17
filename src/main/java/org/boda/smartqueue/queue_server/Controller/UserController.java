@@ -1,7 +1,9 @@
 package org.boda.smartqueue.queue_server.Controller;
 
 import org.boda.smartqueue.queue_server.DTO.*;
+import org.boda.smartqueue.queue_server.Repo.ActiveQueueItemRepository;
 import org.boda.smartqueue.queue_server.Repo.QueueStateRepository;
+import org.boda.smartqueue.queue_server.model.ActiveQueueItem;
 import org.boda.smartqueue.queue_server.model.QueueState;
 import org.boda.smartqueue.queue_server.model.userDataModel;
 import org.boda.smartqueue.queue_server.services.UserService;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,7 +36,8 @@ public class UserController {
     // ADD THIS AUTOWIRED FIELD
     @Autowired
     private QueueStateRepository queueStateRepository;
-
+    @Autowired
+    private ActiveQueueItemRepository activeQueueItemRepository;
     // ... existing methods ...
 
     // NEW ENDPOINT: Get the current state of all queues (or specific service)
@@ -340,6 +344,175 @@ public class UserController {
                     .body(ApiResponse.error("Update failed", e.getMessage()));
         }
     }
+
+
+
+
+    // NEW ENDPOINT: Get the list of active tickets for ALL services
+    @GetMapping("/queues/active")
+    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueues() {
+        System.out.println("🔍 AWS Server: Received request for all active queues");
+
+        try {
+            // Fetch all active queue items, potentially group by service type in the response
+            List<ActiveQueueItem> allActiveItems = activeQueueItemRepository.findAll();
+
+            // Group by service type and sort within each group
+            Map<String, List<ActiveQueueItemDTO>> groupedItems = allActiveItems.stream()
+                    .map(ActiveQueueItemDTO::new)
+                    .sorted(Comparator.comparing(ActiveQueueItemDTO::getCustomerNumber)) // Sort by ticket number
+                    .collect(Collectors.groupingBy(ActiveQueueItemDTO::getServiceType));
+
+            // Convert the map values (lists) back to a single flat list or a structured response
+            List<ActiveQueueItemDTO> dtos = groupedItems.values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+
+            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items.");
+            return ResponseEntity.ok(ApiResponse.success("Active queues retrieved successfully", dtos));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error fetching active queues: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to retrieve active queues", e.getMessage()));
+        }
+    }
+
+    // NEW ENDPOINT: Get the list of active tickets for a specific service
+    @GetMapping("/queues/active/{serviceType}")
+    public ResponseEntity<ApiResponse<List<ActiveQueueItemDTO>>> getActiveQueueForService(@PathVariable String serviceType) {
+        System.out.println("🔍 AWS Server: Received request for active queue for service: " + serviceType);
+
+        try {
+            List<ActiveQueueItem> activeItems = activeQueueItemRepository.findByServiceTypeOrderByCustomerNumberAsc(serviceType);
+            List<ActiveQueueItemDTO> dtos = activeItems.stream()
+                    .map(ActiveQueueItemDTO::new)
+                    .collect(Collectors.toList());
+
+            System.out.println("✅ AWS Server: Returning " + dtos.size() + " active queue items for service: " + serviceType);
+            return ResponseEntity.ok(ApiResponse.success("Active queue for service retrieved successfully", dtos));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error fetching active queue for service " + serviceType + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to retrieve active queue for service", e.getMessage()));
+        }
+    }
+
+    // NEW ENDPOINT: Allow local server to ADD an active ticket to AWS
+    @PostMapping("/queues/active")
+    public ResponseEntity<ApiResponse<ActiveQueueItemDTO>> addActiveTicketToAws(
+            @RequestBody AddActiveTicketRequest request) {
+
+        System.out.println("🔧 AWS Server: Received request to add active ticket to AWS for email: " + request.getEmail() + ", service: " + request.getServiceType() + ", number: " + request.getCustomerNumber());
+
+        try {
+            // Check if the item already exists to avoid duplicates
+            ActiveQueueItem existingItem = activeQueueItemRepository.findByUserEmailAndServiceType(request.getEmail(), request.getServiceType());
+            if (existingItem != null) {
+                System.out.println("⚠️ AWS Server: Active ticket already exists for user: " + request.getEmail() + " in service: " + request.getServiceType());
+                // You could choose to update the existing one or return an error
+                // For now, let's update it.
+                existingItem.setCustomerNumber(request.getCustomerNumber());
+                existingItem.setLastUpdatedAt(LocalDateTime.now());
+                ActiveQueueItem updatedItem = activeQueueItemRepository.save(existingItem);
+                return ResponseEntity.ok(ApiResponse.success("Active ticket updated on AWS", new ActiveQueueItemDTO(updatedItem)));
+            }
+
+            // Create new active queue item
+            ActiveQueueItem newItem = new ActiveQueueItem(request.getEmail(), request.getServiceType(), request.getCustomerNumber());
+            ActiveQueueItem savedItem = activeQueueItemRepository.save(newItem);
+            System.out.println("✅ AWS Server: Added active ticket for user: " + request.getEmail() + " to service: " + request.getServiceType());
+
+            return ResponseEntity.ok(ApiResponse.success("Active ticket added to AWS", new ActiveQueueItemDTO(savedItem)));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error adding active ticket to AWS: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to add active ticket to AWS", e.getMessage()));
+        }
+    }
+
+    // NEW ENDPOINT: Allow local server to REMOVE an active ticket from AWS (on cancel/complete)
+    @DeleteMapping("/queues/active")
+    public ResponseEntity<ApiResponse<String>> removeActiveTicketFromAws(
+            @RequestBody RemoveActiveTicketRequest request) {
+
+        System.out.println("🔧 AWS Server: Received request to remove active ticket from AWS for email: " + request.getEmail() + ", service: " + request.getServiceType());
+
+        try {
+            // Find and delete the specific item
+            activeQueueItemRepository.deleteByUserEmailAndServiceType(request.getEmail(), request.getServiceType());
+            System.out.println("✅ AWS Server: Removed active ticket for user: " + request.getEmail() + " from service: " + request.getServiceType());
+
+            return ResponseEntity.ok(ApiResponse.success("Active ticket removed from AWS", "Ticket removed successfully"));
+
+        } catch (Exception e) {
+            System.err.println("❌ AWS Server: Error removing active ticket from AWS: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to remove active ticket from AWS", e.getMessage()));
+        }
+    }
+
+    public static class ActiveQueueItemDTO {
+        private String userEmail;
+        private String serviceType;
+        private String customerNumber;
+        private LocalDateTime assignedAt;
+        private LocalDateTime lastUpdatedAt;
+
+        // Constructor from entity
+        public ActiveQueueItemDTO(ActiveQueueItem item) {
+            this.userEmail = item.getUserEmail();
+            this.serviceType = item.getServiceType();
+            this.customerNumber = item.getCustomerNumber();
+            this.assignedAt = item.getAssignedAt();
+            this.lastUpdatedAt = item.getLastUpdatedAt();
+        }
+
+        // Getters and Setters
+        public String getUserEmail() { return userEmail; }
+        public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+        public String getCustomerNumber() { return customerNumber; }
+        public void setCustomerNumber(String customerNumber) { this.customerNumber = customerNumber; }
+        public LocalDateTime getAssignedAt() { return assignedAt; }
+        public void setAssignedAt(LocalDateTime assignedAt) { this.assignedAt = assignedAt; }
+        public LocalDateTime getLastUpdatedAt() { return lastUpdatedAt; }
+        public void setLastUpdatedAt(LocalDateTime lastUpdatedAt) { this.lastUpdatedAt = lastUpdatedAt; }
+    }
+
+    // ADD THE REQUEST DTO CLASS for adding active ticket
+    public static class AddActiveTicketRequest {
+        private String email;
+        private String serviceType;
+        private String customerNumber;
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+        public String getCustomerNumber() { return customerNumber; }
+        public void setCustomerNumber(String customerNumber) { this.customerNumber = customerNumber; }
+    }
+
+    // ADD THE REQUEST DTO CLASS for removing active ticket
+    public static class RemoveActiveTicketRequest {
+        private String email;
+        private String serviceType;
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getServiceType() { return serviceType; }
+        public void setServiceType(String serviceType) { this.serviceType = serviceType; }
+    }
+
+
 
     // ... existing methods ...
 

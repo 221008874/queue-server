@@ -41,9 +41,9 @@ public class SecurityConfig {
     @Bean
     @Order(1) // Give this filter chain a higher priority (lower number)
     public SecurityFilterChain apiUpdateFilterChain(HttpSecurity http) throws Exception {
-        // Configure a specific chain for the update endpoint
+        // Configure a specific chain for the update endpoints
         http
-                .securityMatcher("/api/users/update-queue-state") // Apply this chain only to this path
+                .securityMatcher("/api/users/update-queue-state", "/api/users/ticket-status", "/api/users/queues/active") // Add the new path
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -67,7 +67,9 @@ public class SecurityConfig {
                                 "/api/users/forgot-password",
                                 "/api/users/reset-password",
                                 "/api/users/health",
-                                "/api/users/queues/state" // Make GET endpoint public
+                                "/api/users/queues/state", // Make GET endpoint public
+                                "/api/users/queues/active", // Make this GET endpoint public
+                                "/api/users/queues/active/{serviceType}" // Make this GET endpoint public
                         ).permitAll()
                         .anyRequest().authenticated() // Everything else requires JWT
                 )
@@ -79,7 +81,6 @@ public class SecurityConfig {
 
         return http.build();
     }
-
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
