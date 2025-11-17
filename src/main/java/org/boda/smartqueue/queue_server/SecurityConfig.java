@@ -6,7 +6,8 @@ import org.boda.smartqueue.queue_server.JWT.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order; // Add this import
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod; // Add this import
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -46,7 +47,7 @@ public class SecurityConfig {
                 .securityMatcher( // Match only the *updating* paths that need the API key
                         "/api/users/update-queue-state", // POST for queue state
                         "/api/users/ticket-status",     // PATCH/POST for ticket status
-                        "/api/users/queues/active"      // POST/DELETE for active queue items
+                        "/api/users/queues/active"      // POST/DELETE for active queue items (NOT GET)
                         // Add other paths that require API key here if needed
                 )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -54,7 +55,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(new ApiKeyAuthFilter(LOCAL_SERVER_API_KEY), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        .anyRequest().authenticated() // Requires valid API key
+                        .anyRequest().authenticated() // Requires valid API key for matched paths
                 );
         return http.build();
     }
@@ -75,10 +76,11 @@ public class SecurityConfig {
                                 "/api/users/health",
                                 "/api/users/queues/state" // Public GET for overall state
                                 // DO NOT include "/api/users/queues/active" here anymore
-                                // It's handled by the higher priority chain for updates
+                                // It's handled by the higher priority chain for updates OR below for specific GET
                         ).permitAll()
-                        // Explicitly allow GET requests to /api/users/queues/active (list all) and /api/users/queues/active/{serviceType} (list by service)
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/users/queues/active", "/api/users/queues/active/{serviceType}").permitAll()
+                        // **** CRITICAL FIX: Explicitly allow GET requests to /api/users/queues/active (list all) and /api/users/queues/active/{serviceType} (list by service)
+                        // This rule must be in this chain (order 2) to take effect after the apiUpdateFilterChain (order 1) handles POST/DELETE
+                        .requestMatchers(HttpMethod.GET, "/api/users/queues/active", "/api/users/queues/active/{serviceType}").permitAll()
                         .anyRequest().authenticated() // Everything else requires JWT
                 )
                 .sessionManagement(session -> session
